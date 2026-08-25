@@ -1,0 +1,50 @@
+name: "Android build environment"
+description: >-
+  JDK 21 + cached Gradle + problem matchers for error annotations, and
+  generation of the Gradle wrapper that AI Studio Kotlin exports omit.
+
+runs:
+  using: "composite"
+  steps:
+    - name: Detect Gradle version from wrapper properties
+      id: gradle_version
+      shell: bash
+      run: |
+        set -euo pipefail
+        GV="$(sed -n 's/.*gradle-\([0-9][0-9.]*\)-bin\.zip.*/\1/p' \
+          gradle/wrapper/gradle-wrapper.properties | head -n1)"
+        if [ -z "${GV}" ]; then GV="9.3.1"; fi
+        echo "version=${GV}" >> "$GITHUB_OUTPUT"
+
+    - name: Set up JDK 21 (Temurin)
+      uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: "21"
+
+    - name: Set up Gradle with dependency caching
+      uses: gradle/actions/setup-gradle@v6
+      with:
+        gradle-version: ${{ steps.gradle_version.outputs.version }}
+        cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+    - name: Register problem matchers (inline error annotations)
+      shell: bash
+      run: |
+        for matcher in kotlin java-xml gradle; do
+          echo "::add-matcher::$GITHUB_WORKSPACE/.github/problem-matchers/${matcher}.json"
+        done
+        echo "Problem matchers registered."
+
+    - name: Generate Gradle wrapper (not shipped in AI Studio exports)
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -x ./gradlew ]; then
+          echo "gradlew already present."
+        else
+          echo "gradlew missing -> generating it with Gradle ${{ steps.gradle_version.outputs.version }}"
+          gradle wrapper --gradle-version "${{ steps.gradle_version.outputs.version }}" --distribution-type bin
+          chmod +x gradlew
+        fi
+        ./gradlew --version

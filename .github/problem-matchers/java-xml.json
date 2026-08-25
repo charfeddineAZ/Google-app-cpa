@@ -1,0 +1,43 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "javac-aapt-error",
+      "severity": "error",
+      "pattern": [
+        {
+          "regexp": "^(.+?\\.(?:java|kt|kts|xml|json)):(\\d+):(?:(\\d+):)?\\s*[Ee]rror: (.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      ]
+    },
+    {
+      "owner": "javac-aapt-warning",
+      "severity": "warning",
+      "pattern": [
+        {
+          "regexp": "^(.+?\\.(?:java|kt|kts|xml|json)):(\\d+):(?:(\\d+):)?\\s*[Ww]arning: (.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      ]
+    },
+    {
+      "owner": "xml-resource-error",
+      "severity": "error",
+      "pattern": [
+        {
+          "regexp": "^ERROR: (.+?):(\\d+):(\\d+): (.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "kotlin-error",
+      "severity": "error",
+      "pattern": [
+        {
+          "regexp": "^e: file://(.+?):(\\d+):(\\d+)\\s+(.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      ]
+    },
+    {
+      "owner": "kotlin-error-ksp",
+      "severity": "error",
+      "pattern": [
+        {
+          "regexp": "^e: \\[ksp\\]\\s+(.+)$",
+          "message": 1
+        }
+      ]
+    },
+    {
+      "owner": "kotlin-warning",
+      "severity": "warning",
+      "pattern": [
+        {
+          "regexp": "^w: file://(.+?):(\\d+):(\\d+)\\s+(.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      ]
+    },
+    {
+      "owner": "kotlin-warning-generic",
+      "severity": "warning",
+      "pattern": [
+        {
+          "regexp": "^w: (?:warning|W):?\\s*(.+)$",
+          "message": 1
+        }
+      ]
+    }
+  ]
+}
