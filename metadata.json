@@ -1,0 +1,7 @@
+{
+  "name": "CPA Automator",
+  "description": "Browser automation, proxy & geo profiling, smart form autofill, UTM manager, and CPA lead tracker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
