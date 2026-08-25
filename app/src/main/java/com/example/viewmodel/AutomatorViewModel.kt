@@ -51,6 +51,44 @@ class AutomatorViewModel : ViewModel() {
   private val _taskConfig = MutableStateFlow(TaskConfig())
   val taskConfig: StateFlow<TaskConfig> = _taskConfig.asStateFlow()
 
+  // Sequential Task Queue
+  private val _taskList = MutableStateFlow<List<com.example.model.TaskItem>>(
+    listOf(
+      com.example.model.TaskItem(
+        id = "task-1",
+        title = "Task #1: US Gift Card Reward",
+        offerUrl = "https://rileymarker.com/show.php?l=0&u=2227942&id=74924",
+        referrerBaseUrl = "https://www.google.com/search",
+        useRandomReferrer = true,
+        selectedUserAgentIndex = 0,
+        selectedMode = AutomationMode.MODE_3_SMART_COMPLETION,
+        taskRepeatCount = 2,
+        browserDurationSeconds = 55,
+        utmSource = "google",
+        utmMedium = "cpc",
+        utmCampaign = "reward_promo_us"
+      ),
+      com.example.model.TaskItem(
+        id = "task-2",
+        title = "Task #2: Special Review Survey",
+        offerUrl = "https://rileymarker.com/show.php?l=0&u=2227942&id=74924",
+        referrerBaseUrl = "https://m.facebook.com/l.php",
+        useRandomReferrer = true,
+        selectedUserAgentIndex = 1,
+        selectedMode = AutomationMode.MODE_1_BROWSER_CYCLE,
+        taskRepeatCount = 1,
+        browserDurationSeconds = 45,
+        utmSource = "facebook",
+        utmMedium = "social",
+        utmCampaign = "survey_jobs_2026"
+      )
+    )
+  )
+  val taskList: StateFlow<List<com.example.model.TaskItem>> = _taskList.asStateFlow()
+
+  private val _currentTaskIndex = MutableStateFlow(0)
+  val currentTaskIndex: StateFlow<Int> = _currentTaskIndex.asStateFlow()
+
   private val _leadStatus = MutableStateFlow(LeadStatus())
   val leadStatus: StateFlow<LeadStatus> = _leadStatus.asStateFlow()
 
@@ -274,6 +312,70 @@ class AutomatorViewModel : ViewModel() {
     }
   }
 
+  val randomReferrersList = listOf(
+    "https://www.google.com/search?q=online+survey+rewards",
+    "https://m.facebook.com/l.php?u=cpa_offer",
+    "https://t.co/exclusive_promos",
+    "https://www.bing.com/search?q=earn+gift+cards+reviews",
+    "https://www.instagram.com/p/promotions_deal",
+    "https://www.tiktok.com/link/rewards_cpa",
+    "https://www.pinterest.com/pin/survey_deal",
+    "https://www.youtube.com/redirect?q=bonus_link"
+  )
+
+  fun getRandomReferrer(): String = randomReferrersList.random()
+
+  fun addTask(task: com.example.model.TaskItem) {
+    _taskList.value = _taskList.value + task
+    addLog(LogLevel.INFO, "➕ Added Task #${_taskList.value.size}: ${task.title}")
+  }
+
+  fun updateTask(updatedTask: com.example.model.TaskItem) {
+    _taskList.value = _taskList.value.map { if (it.id == updatedTask.id) updatedTask else it }
+    addLog(LogLevel.INFO, "✏️ Updated Task: ${updatedTask.title}")
+  }
+
+  fun deleteTask(taskId: String) {
+    val target = _taskList.value.find { it.id == taskId }
+    _taskList.value = _taskList.value.filter { it.id != taskId }
+    addLog(LogLevel.WARNING, "🗑️ Deleted Task: ${target?.title ?: taskId}")
+  }
+
+  fun duplicateTask(taskId: String) {
+    val target = _taskList.value.find { it.id == taskId } ?: return
+    val copy = target.copy(
+      id = java.util.UUID.randomUUID().toString(),
+      title = "${target.title} (Copy)",
+      isCompleted = false,
+      isRunning = false,
+      completedRepeats = 0
+    )
+    _taskList.value = _taskList.value + copy
+    addLog(LogLevel.INFO, "📋 Duplicated Task: ${copy.title}")
+  }
+
+  fun moveTaskUp(index: Int) {
+    if (index > 0 && index < _taskList.value.size) {
+      val mutable = _taskList.value.toMutableList()
+      val item = mutable.removeAt(index)
+      mutable.add(index - 1, item)
+      _taskList.value = mutable
+    }
+  }
+
+  fun moveTaskDown(index: Int) {
+    if (index >= 0 && index < _taskList.value.size - 1) {
+      val mutable = _taskList.value.toMutableList()
+      val item = mutable.removeAt(index)
+      mutable.add(index + 1, item)
+      _taskList.value = mutable
+    }
+  }
+
+  fun resetTasksState() {
+    _taskList.value = _taskList.value.map { it.copy(isCompleted = false, isRunning = false, completedRepeats = 0) }
+  }
+
   fun startAutomation() {
     if (_isAutomating.value) return
     _isAutomating.value = true
@@ -293,188 +395,202 @@ class AutomatorViewModel : ViewModel() {
     automationJob = null
     _isAutomating.value = false
     _automationState.value = AutomationState.IDLE
+    _taskList.value = _taskList.value.map { it.copy(isRunning = false) }
     addLog(LogLevel.WARNING, "■ Automation STOPPED by user.")
   }
 
   private suspend fun executeAutomationEngine() {
-    val config = _taskConfig.value
-    var cycle = 0
-
-    while (_isAutomating.value) {
-      cycle++
-      _currentCycle.value = cycle
-
-      if (!config.unlimitedCycles && cycle > config.processRepeatCount.coerceAtLeast(1)) {
-        break
-      }
-
-      val cycleLabel = if (config.unlimitedCycles) "Cycle $cycle [Continuous Mode]" else "Cycle $cycle of ${config.processRepeatCount}"
-      addLog(LogLevel.INFO, "========================================")
-      addLog(LogLevel.INFO, "▶ Starting $cycleLabel")
-      addLog(LogLevel.INFO, "========================================")
-
-      // Stage 1: Auto-Rotate Proxy from Asocks pool & Launch isolated container
-      _currentPrepStage.value = BrowserPrepStage.STAGE_1_PROXY_INIT
-      _automationState.value = AutomationState.INITIALIZING_PROXY
-      _simulatedPageTitle.value = "Configuring Dynamic Residential Proxy..."
-
-      if (config.autoRotateProxyEachCycle && ProxyListService.getPoolSize() > 0) {
-        val nextProxy = ProxyListService.getNextProxy()
-        _proxyStats.value = _proxyStats.value.copy(currentIndex = ProxyListService.getCurrentIndex())
-        
-        val cleanInput = nextProxy.raw.ifBlank { "${nextProxy.protocol.lowercase()}://${nextProxy.username}:${nextProxy.password}@${nextProxy.ip}:${nextProxy.port}" }
-        _proxyProfile.value = _proxyProfile.value.copy(
-          rawProxyInput = cleanInput,
-          ip = nextProxy.ip,
-          port = nextProxy.port,
-          protocol = nextProxy.protocol,
-          username = nextProxy.username,
-          password = nextProxy.password,
-          isConnected = true
+    val currentQueue = _taskList.value.ifEmpty {
+      listOf(
+        com.example.model.TaskItem(
+          id = "default-task",
+          title = "Default CPA Task",
+          offerUrl = _taskConfig.value.offerUrl,
+          referrerBaseUrl = _taskConfig.value.referrerBaseUrl,
+          useRandomReferrer = false,
+          selectedUserAgentIndex = _taskConfig.value.selectedUserAgentIndex,
+          selectedMode = _taskConfig.value.selectedMode,
+          taskRepeatCount = _taskConfig.value.taskRepeatCount,
+          browserDurationSeconds = _taskConfig.value.browserDurationSeconds
         )
-        addLog(LogLevel.NETWORK, "[${currentTime()}] Switched to Proxy: ${nextProxy.protocol}://${nextProxy.ip}:${nextProxy.port}")
+      )
+    }
+
+    // Reset task statuses
+    _taskList.value = _taskList.value.map { it.copy(isCompleted = false, isRunning = false, completedRepeats = 0) }
+
+    addLog(LogLevel.INFO, "==================================================")
+    addLog(LogLevel.INFO, "▶ Starting Sequential Task Queue (${currentQueue.size} Tasks in sequence)")
+    addLog(LogLevel.INFO, "==================================================")
+
+    for (taskIdx in currentQueue.indices) {
+      if (!_isAutomating.value) break
+      _currentTaskIndex.value = taskIdx
+      val task = currentQueue[taskIdx]
+
+      // Mark running
+      _taskList.value = _taskList.value.mapIndexed { idx, item ->
+        if (idx == taskIdx) item.copy(isRunning = true, isCompleted = false) else item
       }
 
-      _liveFields.value = mapOf(
-        "Proxy IP" to _proxyProfile.value.ip,
-        "Port" to _proxyProfile.value.port,
-        "Protocol" to _proxyProfile.value.protocol,
-        "User" to _proxyProfile.value.username.take(12) + "..."
+      val actualReferrer = if (task.useRandomReferrer) getRandomReferrer() else task.referrerBaseUrl
+      val config = _taskConfig.value.copy(
+        offerUrl = task.offerUrl,
+        referrerBaseUrl = actualReferrer,
+        selectedUserAgentIndex = task.selectedUserAgentIndex,
+        selectedMode = task.selectedMode,
+        taskRepeatCount = task.taskRepeatCount,
+        browserDurationSeconds = task.browserDurationSeconds,
+        utmSource = task.utmSource,
+        utmMedium = task.utmMedium,
+        utmCampaign = task.utmCampaign,
+        utmContent = task.utmContent
       )
-      delay(700)
+      _taskConfig.value = config
 
-      // Stage 2: Geo IP & Real Geolocation Lookup via api.i.pn
-      _currentPrepStage.value = BrowserPrepStage.STAGE_2_GEO_LOOKUP
-      _automationState.value = AutomationState.GEO_LOOKUP
-      _simulatedPageTitle.value = "Resolving Geolocation Profile for ${_proxyProfile.value.ip}..."
-      
-      try {
-        val geoResult = GeoIpService.lookupIp(_proxyProfile.value.ip)
-        geoResult.onSuccess { profile ->
-          _proxyProfile.value = profile.copy(
-            rawProxyInput = _proxyProfile.value.rawProxyInput,
-            protocol = _proxyProfile.value.protocol,
-            port = _proxyProfile.value.port,
-            username = _proxyProfile.value.username,
-            password = _proxyProfile.value.password,
+      val repeats = task.taskRepeatCount.coerceAtLeast(1)
+      addLog(LogLevel.INFO, "--------------------------------------------------")
+      addLog(LogLevel.INFO, "🚀 Task [${taskIdx + 1}/${currentQueue.size}]: ${task.title}")
+      addLog(LogLevel.NETWORK, "Offer: ${task.offerUrl} | Referrer: $actualReferrer")
+      addLog(LogLevel.INFO, "Mode: ${task.selectedMode.displayName} ($repeats Repeats)")
+      addLog(LogLevel.INFO, "--------------------------------------------------")
+
+      for (rep in 1..repeats) {
+        if (!_isAutomating.value) break
+        _currentCycle.value = rep
+        _currentTaskRepeat.value = rep
+
+        val cycleLabel = "Task [${taskIdx + 1}/${currentQueue.size}] Repeat $rep of $repeats"
+        addLog(LogLevel.INFO, "▶ Running $cycleLabel")
+
+        // Stage 1: Auto-Rotate Proxy & launch container
+        _currentPrepStage.value = BrowserPrepStage.STAGE_1_PROXY_INIT
+        _automationState.value = AutomationState.INITIALIZING_PROXY
+        _simulatedPageTitle.value = "Configuring Dynamic Residential Proxy..."
+
+        if (config.autoRotateProxyEachCycle && ProxyListService.getPoolSize() > 0) {
+          val nextProxy = ProxyListService.getNextProxy()
+          _proxyStats.value = _proxyStats.value.copy(currentIndex = ProxyListService.getCurrentIndex())
+          val cleanInput = nextProxy.raw.ifBlank { "${nextProxy.protocol.lowercase()}://${nextProxy.username}:${nextProxy.password}@${nextProxy.ip}:${nextProxy.port}" }
+          _proxyProfile.value = _proxyProfile.value.copy(
+            rawProxyInput = cleanInput,
+            ip = nextProxy.ip,
+            port = nextProxy.port,
+            protocol = nextProxy.protocol,
+            username = nextProxy.username,
+            password = nextProxy.password,
             isConnected = true
           )
-          addLog(LogLevel.SUCCESS, "[${currentTime()}] Geo-Lookup: ${_proxyProfile.value.city}, ${_proxyProfile.value.countryName} [${profile.timezone}]")
+          addLog(LogLevel.NETWORK, "[${currentTime()}] Switched Proxy: ${nextProxy.protocol}://${nextProxy.ip}:${nextProxy.port}")
         }
-      } catch (e: Exception) {
-        addLog(LogLevel.WARNING, "Geo lookup notice: ${e.message}")
-      }
-      delay(600)
 
-      // Stage 3: Timezone & Language Environment Spoofing
-      _currentPrepStage.value = BrowserPrepStage.STAGE_3_LOCALE_INJECTION
-      _automationState.value = AutomationState.INJECTING_ENVIRONMENT
-      _simulatedPageTitle.value = "Injecting Timezone & Language Profiles..."
-      _liveFields.value = mapOf(
-        "Timezone" to _proxyProfile.value.timezone,
-        "Browser Locale" to _proxyProfile.value.language,
-        "User-Agent" to _proxyProfile.value.userAgent.take(30) + "..."
-      )
-      addLog(LogLevel.INFO, "[${currentTime()}] Injected Locale: ${_proxyProfile.value.language} | Timezone: ${_proxyProfile.value.timezone}")
-      delay(600)
+        _liveFields.value = mapOf(
+          "Task" to "[${taskIdx + 1}/${currentQueue.size}] ${task.title}",
+          "Proxy IP" to _proxyProfile.value.ip,
+          "Port" to _proxyProfile.value.port,
+          "Referrer" to actualReferrer
+        )
+        delay(600)
 
-      // Stage 4: WebRTC Anti-Leak Shield
-      _currentPrepStage.value = BrowserPrepStage.STAGE_4_WEBRTC_SHIELD
-      _liveFields.value = mapOf(
-        "WebRTC Shield" to "RTCPeerConnection Disabled",
-        "Public IP Leak" to "Protected (Proxy Tunnel Sealed)",
-        "DNS Mode" to "Remote Proxy DNS Only"
-      )
-      addLog(LogLevel.NETWORK, "[${currentTime()}] WebRTC Leak Prevention: ACTIVE (Real IP Protected)")
-      delay(600)
-
-      // Stage 5: Persona Generation based on synced IP Geo country
-      _currentPrepStage.value = BrowserPrepStage.STAGE_5_PERSONA_GEN
-      _simulatedPageTitle.value = "Synthesizing Persona Identity for ${_proxyProfile.value.countryName}..."
-      val newPersona = PersonaGenerator.generatePersona(_proxyProfile.value.countryCode)
-      _persona.value = newPersona
-      _emailStats.value = PersonaGenerator.getEmailPoolStats()
-
-      _liveFields.value = mapOf(
-        "Full Name" to newPersona.fullName,
-        "Email" to newPersona.email,
-        "Phone" to newPersona.phoneNumber,
-        "Address" to "${newPersona.streetAddress}, ${newPersona.city}, ${newPersona.zipCode}",
-        "Card (Luhn)" to "${newPersona.cardNumber.take(9)}**** [${newPersona.cardType}]",
-        "CVV / Expiry" to "${newPersona.cardCvv} | ${newPersona.cardExpiry}"
-      )
-      addLog(LogLevel.SUCCESS, "[${currentTime()}] Generated synthetic identity for ${newPersona.country}: ${newPersona.fullName} (${newPersona.cardType})")
-      delay(800)
-
-      // Stage 6: Navigate to CPA Offer with UTM
-      _currentPrepStage.value = BrowserPrepStage.STAGE_6_NAVIGATE_UTM
-      _automationState.value = AutomationState.BROWSER_ACTIVE
-      val fullTargetUrl = buildUtmUrl()
-      _targetWebViewUrl.value = fullTargetUrl
-      _simulatedPageTitle.value = "Navigating to: $fullTargetUrl"
-      
-      // Flush previous cookies/cache before loading
-      _clearCacheSignal.tryEmit(Unit)
-      delay(400)
-      _reloadSignal.tryEmit(Unit)
-
-      _liveFields.value = mapOf(
-        "HTTP Referrer" to config.referrerBaseUrl,
-        "Target URL" to fullTargetUrl,
-        "utm_campaign" to config.utmCampaign
-      )
-      addLog(LogLevel.NETWORK, "[${currentTime()}] Injected HTTP Referrer: ${config.referrerBaseUrl}")
-      addLog(LogLevel.NETWORK, "[${currentTime()}] Target CPA Offer loaded in Live WebView: $fullTargetUrl")
-      delay(1500)
-
-      // Determine task repeats based on Mode
-      val taskRepeats = if (config.selectedMode == AutomationMode.MODE_2_TASK_IN_SESSION) {
-        config.taskRepeatCount.coerceAtLeast(1)
-      } else {
-        1
-      }
-
-      for (taskRepeat in 1..taskRepeats) {
-        if (!_isAutomating.value) break
-        _currentTaskRepeat.value = taskRepeat
-
-        if (taskRepeat > 1) {
-          addLog(LogLevel.INFO, "--- In-Session Repeat $taskRepeat/$taskRepeats: Clearing cookies & cache ---")
-          rotateCvv()
-          _clearCacheSignal.tryEmit(Unit)
-          _liveFields.value = mapOf(
-            "Session State" to "Cache & Cookies Flushed",
-            "Rotated CVV" to _persona.value.cardCvv,
-            "Target" to fullTargetUrl
-          )
-          delay(800)
+        // Stage 2: Geo IP Lookup
+        _currentPrepStage.value = BrowserPrepStage.STAGE_2_GEO_LOOKUP
+        _automationState.value = AutomationState.GEO_LOOKUP
+        _simulatedPageTitle.value = "Resolving Geolocation Profile for ${_proxyProfile.value.ip}..."
+        try {
+          val geoResult = GeoIpService.lookupIp(_proxyProfile.value.ip)
+          geoResult.onSuccess { profile ->
+            _proxyProfile.value = profile.copy(
+              rawProxyInput = _proxyProfile.value.rawProxyInput,
+              protocol = _proxyProfile.value.protocol,
+              port = _proxyProfile.value.port,
+              username = _proxyProfile.value.username,
+              password = _proxyProfile.value.password,
+              isConnected = true
+            )
+            addLog(LogLevel.SUCCESS, "[${currentTime()}] Geo: ${_proxyProfile.value.city}, ${_proxyProfile.value.countryName} [${profile.timezone}]")
+          }
+        } catch (e: Exception) {
+          addLog(LogLevel.WARNING, "Geo lookup notice: ${e.message}")
         }
+        delay(500)
+
+        // Stage 3: Timezone & Language
+        _currentPrepStage.value = BrowserPrepStage.STAGE_3_LOCALE_INJECTION
+        _automationState.value = AutomationState.INJECTING_ENVIRONMENT
+        _simulatedPageTitle.value = "Injecting Timezone & Language Profiles..."
+        _liveFields.value = mapOf(
+          "Timezone" to _proxyProfile.value.timezone,
+          "Browser Locale" to _proxyProfile.value.language,
+          "Referrer" to actualReferrer
+        )
+        addLog(LogLevel.INFO, "[${currentTime()}] Injected Locale: ${_proxyProfile.value.language} | Timezone: ${_proxyProfile.value.timezone}")
+        delay(500)
+
+        // Stage 4: WebRTC Shield
+        _currentPrepStage.value = BrowserPrepStage.STAGE_4_WEBRTC_SHIELD
+        addLog(LogLevel.NETWORK, "[${currentTime()}] WebRTC Leak Prevention: ACTIVE (Real IP Shielded)")
+        delay(500)
+
+        // Stage 5: Persona Generation
+        _currentPrepStage.value = BrowserPrepStage.STAGE_5_PERSONA_GEN
+        _simulatedPageTitle.value = "Synthesizing Identity for ${_proxyProfile.value.countryName}..."
+        val newPersona = PersonaGenerator.generatePersona(_proxyProfile.value.countryCode)
+        _persona.value = newPersona
+        _emailStats.value = PersonaGenerator.getEmailPoolStats()
+
+        _liveFields.value = mapOf(
+          "Full Name" to newPersona.fullName,
+          "Email" to newPersona.email,
+          "Phone" to newPersona.phoneNumber,
+          "Address" to "${newPersona.streetAddress}, ${newPersona.city}, ${newPersona.zipCode}",
+          "Card (Luhn)" to "${newPersona.cardNumber.take(9)}**** [${newPersona.cardType}]",
+          "CVV / Expiry" to "${newPersona.cardCvv} | ${newPersona.cardExpiry}"
+        )
+        addLog(LogLevel.SUCCESS, "[${currentTime()}] Generated Persona for ${newPersona.country}: ${newPersona.fullName}")
+        delay(600)
+
+        // Stage 6: Navigate to Task Offer with UTM
+        _currentPrepStage.value = BrowserPrepStage.STAGE_6_NAVIGATE_UTM
+        _automationState.value = AutomationState.BROWSER_ACTIVE
+        val fullTargetUrl = buildUtmUrl()
+        _targetWebViewUrl.value = fullTargetUrl
+        _simulatedPageTitle.value = "Navigating to: $fullTargetUrl"
+
+        _clearCacheSignal.tryEmit(Unit)
+        delay(300)
+        _reloadSignal.tryEmit(Unit)
+
+        _liveFields.value = mapOf(
+          "HTTP Referrer" to actualReferrer,
+          "Target URL" to fullTargetUrl,
+          "Task" to "${taskIdx + 1}/${currentQueue.size}"
+        )
+        addLog(LogLevel.NETWORK, "[${currentTime()}] Loaded Offer URL: $fullTargetUrl")
+        delay(1200)
 
         // Stage 7: AI Form Analysis & Intelligent Filling
         _currentPrepStage.value = BrowserPrepStage.STAGE_7_AI_FORM_FILL
         _automationState.value = AutomationState.AI_FORM_ANALYSIS
-        _simulatedPageTitle.value = "AI: Analyzing Live Web Page DOM for Input Fields..."
-        addLog(LogLevel.AI_ACTION, "[${currentTime()}] AI: Scanning DOM structure for required inputs & survey prompts")
-        delay(700)
+        _simulatedPageTitle.value = "AI: Analyzing Form & Survey Elements..."
+        addLog(LogLevel.AI_ACTION, "[${currentTime()}] AI: Scanning DOM structure for form fields")
+        delay(600)
 
         _automationState.value = AutomationState.AI_AUTO_FILLING
-        _simulatedPageTitle.value = "AI: Autofilling Live Web Page with Humanized Typing..."
-        // Trigger real DOM JavaScript autofill in WebView
+        _simulatedPageTitle.value = "AI: Autofilling Form Fields with Humanized Behavior..."
         _triggerFormFillEvent.tryEmit(Unit)
-        addLog(LogLevel.AI_ACTION, "[${currentTime()}] AI JS Engine: Injected localized persona data into DOM")
-        delay(1000)
+        addLog(LogLevel.AI_ACTION, "[${currentTime()}] AI JS Engine: Injected localized persona into DOM")
+        delay(900)
 
         // Stage 8: Click Continue Button
         _currentPrepStage.value = BrowserPrepStage.STAGE_8_CLICK_CONTINUE
-        _simulatedPageTitle.value = "AI: Submitting Form & Clicking Continue Button..."
-        addLog(LogLevel.AI_ACTION, "[${currentTime()}] AI: Auto-clicked primary CTA 'Continue / Apply' button")
-        delay(1000)
+        _simulatedPageTitle.value = "AI: Submitting & Clicking Continue..."
+        addLog(LogLevel.AI_ACTION, "[${currentTime()}] AI: Auto-clicked primary CTA 'Continue' button")
+        delay(800)
 
         if (config.selectedMode == AutomationMode.MODE_3_SMART_COMPLETION) {
-          addLog(LogLevel.SUCCESS, "[${currentTime()}] AI: Smart completion keyword detected ('Thank you / Order Confirmed')")
-          delay(1200)
+          addLog(LogLevel.SUCCESS, "[${currentTime()}] AI: Smart completion detected")
+          delay(1000)
         } else {
-          // Timer countdown for Mode 1 & 2
           val timerDuration = if (config.selectedMode == AutomationMode.MODE_2_TASK_IN_SESSION) config.taskDurationSeconds else config.browserDurationSeconds
           for (sec in timerDuration downTo 0) {
             if (!_isAutomating.value) break
@@ -483,20 +599,17 @@ class AutomatorViewModel : ViewModel() {
           }
         }
 
-        // Stage 9: Direct CPAGrip Lead RSS Check (No proxy)
+        // Stage 9: Lead Check
         _currentPrepStage.value = BrowserPrepStage.STAGE_9_LEAD_RSS_CHECK
         _automationState.value = AutomationState.LEAD_CHECKING
-        _simulatedPageTitle.value = "Checking CPAGrip Lead RSS Feed (Direct / No Proxy)..."
-        addLog(LogLevel.LEAD, "[${currentTime()}] Lead Check: Pinging CPAGrip RSS for IP ${_proxyProfile.value.ip}")
+        _simulatedPageTitle.value = "Checking CPAGrip Lead RSS Feed (Direct)..."
         val leadResult = CpaLeadCheckerService.checkLeadRss(
           userId = config.cpaGripUserId,
           apiKey = config.cpaGripKey,
           proxyIp = _proxyProfile.value.ip
         )
-
         val updatedChecks = _leadStatus.value.totalChecks + 1
         val newSuccessCount = _leadStatus.value.successfulLeadsCount + if (leadResult.isLeadDetected) 1 else 0
-
         _leadStatus.value = _leadStatus.value.copy(
           totalChecks = updatedChecks,
           successfulLeadsCount = newSuccessCount,
@@ -507,30 +620,38 @@ class AutomatorViewModel : ViewModel() {
           lastCheckTimestamp = timeFormat.format(Date()),
           statusMessage = leadResult.message
         )
-
         if (leadResult.isLeadDetected) {
-          addLog(LogLevel.SUCCESS, "🎉 [${currentTime()}] SUCCESSFUL LEAD RECORDED! Status changed from N/A -> ${leadResult.leadTitle} (${leadResult.payout})")
+          addLog(LogLevel.SUCCESS, "🎉 [${currentTime()}] CONVERSION RECORDED! ${leadResult.leadTitle} (${leadResult.payout})")
         } else {
-          addLog(LogLevel.LEAD, "[${currentTime()}] Lead Check #$updatedChecks: Status is N/A (No conversion registered yet - Standby)")
+          addLog(LogLevel.LEAD, "[${currentTime()}] Lead Check #$updatedChecks: Pending / Standby (Status: N/A)")
         }
-        delay(1000)
+        delay(800)
+
+        // Stage 10: Cycle Cleanup
+        _currentPrepStage.value = BrowserPrepStage.STAGE_10_CYCLE_CLEANUP
+        PersonaGenerator.markEmailUsed(_persona.value.email)
+        _emailStats.value = PersonaGenerator.getEmailPoolStats()
+        _simulatedPageTitle.value = "Repeat $rep of Task ${taskIdx + 1} complete - Cleaned cache"
+        addLog(LogLevel.INFO, "[${currentTime()}] Cleaned cookies, cache & purged used email ${_persona.value.email}")
+
+        // Update completed repeats for this task in list
+        _taskList.value = _taskList.value.mapIndexed { idx, item ->
+          if (idx == taskIdx) item.copy(completedRepeats = rep) else item
+        }
+        delay(600)
       }
 
-      // Stage 10: Repeat or Full Cleanup
-      _currentPrepStage.value = BrowserPrepStage.STAGE_10_CYCLE_CLEANUP
-      PersonaGenerator.markEmailUsed(_persona.value.email)
-      _emailStats.value = PersonaGenerator.getEmailPoolStats()
-      _simulatedPageTitle.value = "Cycle $cycle Completed - Purged used email & flushed cache"
-      addLog(LogLevel.INFO, "[${currentTime()}] Cycle $cycle closed. Cleaned cookies, cache & purged email ${_persona.value.email}")
-      
-      if (_isAutomating.value) {
-        delay(1200)
+      // Mark task completed
+      _taskList.value = _taskList.value.mapIndexed { idx, item ->
+        if (idx == taskIdx) item.copy(isRunning = false, isCompleted = true) else item
       }
+      addLog(LogLevel.SUCCESS, "✓ Task [${taskIdx + 1}/${currentQueue.size}] Completed: ${task.title}")
+      delay(800)
     }
 
     _automationState.value = AutomationState.CYCLE_COMPLETED
     _isAutomating.value = false
-    addLog(LogLevel.SUCCESS, "✓ Automation process finished.")
+    addLog(LogLevel.SUCCESS, "🎉 All ${currentQueue.size} tasks in queue completed! Automation stopped automatically.")
   }
 
   fun manualLeadCheck() {

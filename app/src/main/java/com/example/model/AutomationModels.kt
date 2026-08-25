@@ -172,3 +172,22 @@ data class SimulationStep(
   val status: String,
   val isCompleted: Boolean
 )
+
+data class TaskItem(
+  val id: String = java.util.UUID.randomUUID().toString(),
+  val title: String = "CPA Task",
+  val offerUrl: String = "https://rileymarker.com/show.php?l=0&u=2227942&id=74924",
+  val referrerBaseUrl: String = "https://google.com/search",
+  val useRandomReferrer: Boolean = true,
+  val selectedUserAgentIndex: Int = 0,
+  val selectedMode: AutomationMode = AutomationMode.MODE_3_SMART_COMPLETION,
+  val taskRepeatCount: Int = 1,
+  val browserDurationSeconds: Int = 55,
+  val utmSource: String = "google",
+  val utmMedium: String = "cpc",
+  val utmCampaign: String = "review_promo",
+  val utmContent: String = "cta_apply",
+  val isCompleted: Boolean = false,
+  val isRunning: Boolean = false,
+  val completedRepeats: Int = 0
+)

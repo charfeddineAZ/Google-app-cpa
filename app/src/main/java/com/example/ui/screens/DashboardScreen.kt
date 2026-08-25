@@ -82,6 +82,8 @@ fun DashboardScreen(
   val leadStatus by viewModel.leadStatus.collectAsState()
   val logs by viewModel.logs.collectAsState()
   val isAutomating by viewModel.isAutomating.collectAsState()
+  val taskList by viewModel.taskList.collectAsState()
+  val currentTaskIndex by viewModel.currentTaskIndex.collectAsState()
   val automationState by viewModel.automationState.collectAsState()
   val currentCycle by viewModel.currentCycle.collectAsState()
   val currentTaskRepeat by viewModel.currentTaskRepeat.collectAsState()
@@ -212,9 +214,10 @@ fun DashboardScreen(
                 .background(if (isAutomating) StatusGreen else StatusYellow)
                 .alpha(pulseAlpha)
             )
-            val cycleText = if (taskConfig.unlimitedCycles) "Cycle $currentCycle [Continuous]" else "Cycle $currentCycle/${taskConfig.processRepeatCount}"
+            val activeTask = taskList.getOrNull(currentTaskIndex)
+            val queueInfo = if (taskList.isNotEmpty()) "Task [${currentTaskIndex + 1}/${taskList.size}] ${activeTask?.title?.take(18) ?: ""}" else "Cycle $currentCycle"
             Text(
-              text = "$cycleText • Repeat $currentTaskRepeat • ${automationState.name.replace('_', ' ')}",
+              text = "$queueInfo • Rep $currentTaskRepeat • ${automationState.name.replace('_', ' ')}",
               fontSize = 11.sp,
               fontWeight = FontWeight.Bold,
               color = PrimaryPurpleDark
