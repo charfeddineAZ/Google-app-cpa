@@ -21,8 +21,8 @@ class GreetingScreenshotTest {
 
   @Test
   fun greeting_screenshot() {
-    val viewModel = com.example.viewmodel.AutomatorViewModel()
-    composeTestRule.setContent { MyApplicationTheme { CpaAutomatorApp(viewModel) } }
+    val viewModel = com.example.viewmodel.RapStudioViewModel()
+    composeTestRule.setContent { MyApplicationTheme { TounsiRapApp(viewModel) } }
 
     composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/greeting.png")
   }

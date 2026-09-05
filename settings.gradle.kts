@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "CPA Automator"
+rootProject.name = "Tounsi Rap Studio"
 
 include(":app")

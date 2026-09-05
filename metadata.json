@@ -1,7 +1,6 @@
 {
-  "name": "CPA Automator",
-  "description": "Browser automation, proxy & geo profiling, smart form autofill, UTM manager, and CPA lead tracker.",
+  "name": "راب تونس — Tounsi Rap Studio",
+  "description": "استوديو محلّي لصناعة ومراجعة أغاني الراب بالدارجة التونسية، مع قاموس تونسي ومكتبة أغاني.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }
-

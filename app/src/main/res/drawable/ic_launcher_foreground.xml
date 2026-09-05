@@ -3,7 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/ic_cpa_launcher"
+        android:drawable="@drawable/ic_rap_launcher"
         android:gravity="center" />
 </layer-list>
-
